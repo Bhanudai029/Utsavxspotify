@@ -5,9 +5,8 @@ import { sampleTracks } from '../data';
 import SongManagementService from '../lib/songManagementService';
 import ImageResizer from '../components/ImageResizer';
 import OptimizedImage from '../components/OptimizedImage';
-import FirebaseImageService from '../lib/firebaseImageService';
-import FirebaseUploadTest from '../components/FirebaseUploadTest';
-import { FirebaseDebugger } from '../utils/firebaseDebugger';
+import { uploadImage as uploadToCloudinary } from '../../cloudinary-image-uploader/services/cloudinaryService';
+import type { CloudinaryUploadResponse } from '../../cloudinary-image-uploader/types';
 import type { Track } from '../types';
 import type { SongUpload } from '../lib/songManagementService';
 
@@ -38,7 +37,7 @@ const SongManagementAdmin = () => {
   const [uploadAbortController, setUploadAbortController] = useState<AbortController | null>(null);
   const [showImageResizer, setShowImageResizer] = useState(false);
   const [imageToCrop, setImageToCrop] = useState<File | null>(null);
-  const [showFirebaseTest, setShowFirebaseTest] = useState(false);
+  
   
   const [songForm, setSongForm] = useState<SongFormData>({
     title: '',
@@ -421,117 +420,25 @@ const SongManagementAdmin = () => {
         return;
       } else {
         // Add new song directly to Firebase since we're not uploading files
-        let imageUrl = 'https://via.placeholder.com/400x400/6366f1/ffffff?text=No+Image'; // Default placeholder
-        
-        // Upload image if provided
-        let finalImageUrl = 'https://via.placeholder.com/400x400/6366f1/ffffff?text=No+Image';
+        let imageUrl = 'https://via.placeholder.com/400x400/6366f1/ffffff?text=No+Image';
+        // Upload image if provided using Cloudinary
+        let finalImageUrl = imageUrl;
         
         if (songForm.image) {
           setUploadProgress(10);
           const sanitizedTitle = songForm.title.replace(/[^a-zA-Z0-9\s\-_]/g, '').replace(/\s+/g, '_').toLowerCase();
           
           try {
-            console.log('🔍 Starting Firebase upload diagnosis...');
-            
-            // Run diagnostics first
-            try {
-              await FirebaseDebugger.diagnoseFirebaseIssues();
-            } catch (diagError) {
-              console.warn('⚠️ Diagnostics failed, but continuing:', diagError);
-            }
-            
-            console.log('🚀 Starting image upload to Firebase...');
-            console.log('📁 Firebase config check:', { 
-              hasFirebase: typeof FirebaseImageService !== 'undefined',
-              hasGetInstance: typeof FirebaseImageService?.getInstance === 'function'
-            });
-            
-            const firebaseImageService = FirebaseImageService.getInstance();
-            console.log('✅ Firebase service instance created successfully');
-            
+            console.log('🚀 Uploading image to Cloudinary...');
             setUploadProgress(20);
-            
-            // Enhanced logging for upload start
-            FirebaseDebugger.logUploadStart(songForm.image, sanitizedTitle);
-            console.log('📄 Uploading file details:', {
-              name: sanitizedTitle,
-              size: `${(songForm.image.size / 1024 / 1024).toFixed(2)} MB`,
-              type: songForm.image.type,
-              originalName: songForm.image.name
-            });
-            
-            // Use the upload method with fallback strategies and enhanced progress tracking
-            finalImageUrl = await firebaseImageService.uploadImageWithFallbacks(
-              songForm.image,
-              sanitizedTitle,
-              { folder: 'song-images' },
-              (progress) => {
-                // Update progress during image upload (20% to 60%)
-                const imageProgress = 20 + (progress.progress * 0.4); // 20% + 40% of image upload progress
-                setUploadProgress(Math.round(imageProgress));
-                
-                // Enhanced progress logging
-                FirebaseDebugger.logUploadProgress(progress.progress, progress.bytesTransferred, progress.totalBytes);
-                console.log(`📈 Image upload progress: ${progress.progress.toFixed(1)}% (Overall: ${imageProgress.toFixed(1)}%) - ${(progress.bytesTransferred / 1024 / 1024).toFixed(2)}/${(progress.totalBytes / 1024 / 1024).toFixed(2)} MB`);
-              }
-            );
-            
-            console.log('✅ Image uploaded successfully to Firebase:', finalImageUrl);
+            const result: CloudinaryUploadResponse = await uploadToCloudinary(songForm.image);
+            finalImageUrl = result.secure_url || result.url;
+            console.log('✅ Image uploaded successfully to Cloudinary:', finalImageUrl);
             setUploadProgress(60);
-            
-            // Verify the uploaded image URL
-            try {
-              const response = await fetch(finalImageUrl, { method: 'HEAD' });
-              if (response.ok) {
-                console.log('✅ Upload URL verified as accessible');
-              } else {
-                console.warn('⚠️ Upload URL may have access issues:', response.status);
-              }
-            } catch (verifyError) {
-              console.warn('⚠️ Could not verify upload URL:', verifyError);
-            }
-            
           } catch (imageError) {
-            console.error('❌ Error uploading image to Firebase:', imageError);
-            
-            // Enhanced error analysis and reporting
-            FirebaseDebugger.logUploadError(imageError);
-            
-            // Provide comprehensive error messages with enhanced troubleshooting
-            let errorMessage = 'Failed to upload image to Firebase';
-            if (imageError instanceof Error) {
-              const errorMsg = imageError.message.toLowerCase();
-              
-              if (errorMsg.includes('storage/unauthorized') || errorMsg.includes('access denied')) {
-                errorMessage = 'Firebase Storage access denied. This might be due to authentication issues or storage rules.';
-              } else if (errorMsg.includes('storage/quota-exceeded') || errorMsg.includes('quota')) {
-                errorMessage = 'Firebase Storage quota exceeded. Please check your Firebase storage limits.';
-              } else if (errorMsg.includes('storage/unauthenticated') || errorMsg.includes('authentication')) {
-                errorMessage = 'Firebase authentication required.';
-              } else if (errorMsg.includes('storage/retry-limit-exceeded') || errorMsg.includes('network')) {
-                errorMessage = 'Upload failed due to network issues.';
-              } else if (errorMsg.includes('storage/invalid-format') || errorMsg.includes('format')) {
-                errorMessage = 'Invalid image format. Please use JPEG, PNG, or WebP.';
-              } else if (errorMsg.includes('upload stalled') || errorMsg.includes('stuck') || errorMsg.includes('timeout')) {
-                errorMessage = 'Upload timeout or stuck. This is often due to authentication issues or network problems.';
-              } else if (errorMsg.includes('all upload methods failed')) {
-                errorMessage = 'All upload methods failed. Please check your Firebase configuration and network connection.';
-              } else {
-                errorMessage = `Upload failed: ${imageError.message}`;
-              }
-            }
-            
-            // Enhanced error message with specific troubleshooting
-            const troubleshootingTips = [
-              '• Refresh the page and try again',
-              '• The image has been automatically compressed for optimal upload',
-              '• Check your internet connection stability', 
-              '• Try uploading from a different network if possible',
-              '• Make sure the image file is not corrupted',
-              '• Contact support if the issue persists'
-            ].join('\n');
-            
-            setError(`${errorMessage}\n\nTroubleshooting Steps:\n${troubleshootingTips}`);
+            console.error('❌ Error uploading image to Cloudinary:', imageError);
+            const message = imageError instanceof Error ? imageError.message : 'Unknown Cloudinary upload error';
+            setError(`Failed to upload image: ${message}`);
             setIsUploading(false);
             setUploadProgress(0);
             return;
@@ -722,25 +629,10 @@ const SongManagementAdmin = () => {
             <span>Add New Song</span>
           </button>
           
-          <button
-            onClick={() => setShowFirebaseTest(!showFirebaseTest)}
-            className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-6 py-3 rounded-lg font-semibold flex items-center space-x-2 transition-all duration-300"
-          >
-            <TestTube className="w-5 h-5" />
-            <span>{showFirebaseTest ? 'Hide' : 'Show'} Firebase Test</span>
-          </button>
+          
         </div>
 
-        {/* Firebase Upload Test Component */}
-        {showFirebaseTest && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-8"
-          >
-            <FirebaseUploadTest />
-          </motion.div>
-        )}
+        
 
         {/* Song Form Modal */}
         {isAddingNew && (
@@ -1051,7 +943,7 @@ const SongManagementAdmin = () => {
                   <div className="mt-2 text-xs text-gray-400">
                     {uploadProgress < 10 && 'Preparing upload...'}
                     {uploadProgress >= 5 && uploadProgress < 20 && 'Optimizing image size for upload...'}
-                    {uploadProgress >= 20 && uploadProgress < 60 && 'Uploading compressed image to Firebase...'}
+                    {uploadProgress >= 20 && uploadProgress < 60 && 'Uploading compressed image to Cloudinary...'}
                     {uploadProgress >= 60 && uploadProgress < 90 && 'Saving song metadata...'}
                     {uploadProgress >= 90 && 'Finalizing...'}
                   </div>
