@@ -46,7 +46,7 @@ export const sampleTracks: Track[] = [
     artistId: '1',
     album: 'Kids Songs',
     albumId: '1',
-    duration: 106,
+    duration: 137, // Fixed: Real duration is 2:17
     image: '/baby-shark.jpeg',
     genre: 'Kids',
     releaseDate: '2024-01-15',
@@ -61,7 +61,7 @@ export const sampleTracks: Track[] = [
     artistId: '9',
     album: 'Vida',
     albumId: '11',
-    duration: 229,
+    duration: 227, // Fixed: Real duration is 3:47
     image: '/Despacito.jpeg',
     genre: 'Latin Pop',
     releaseDate: '2017-01-12',
@@ -76,7 +76,7 @@ export const sampleTracks: Track[] = [
     artistId: '8',
     album: 'Classic Kids Songs',
     albumId: '15',
-    duration: 140,
+    duration: 195, // Fixed: Typical duration is around 3:15
     image: '/Wheels%20On%20The%20Bus.jpeg',
     genre: 'Kids',
     releaseDate: '2024-01-15',
@@ -91,7 +91,7 @@ export const sampleTracks: Track[] = [
     artistId: '8',
     album: 'Nursery Rhymes',
     albumId: '10',
-    duration: 95,
+    duration: 150, // Fixed: Typical duration is around 2:30
     image: '/Johny%20Johny%20Yes%20Papa.jpeg',
     genre: 'Kids',
     releaseDate: '2024-01-15',
@@ -106,7 +106,7 @@ export const sampleTracks: Track[] = [
     artistId: '1',
     album: 'Fun Kids Songs',
     albumId: '7',
-    duration: 180,
+    duration: 162, // Fixed: Typical Bath Song duration is around 2:42
     image: '/Bath%20Song.jpeg',
     genre: 'Kids',
     releaseDate: '2024-01-15',
@@ -121,7 +121,7 @@ export const sampleTracks: Track[] = [
     artistId: '12',
     album: 'Furious 7: Original Motion Picture Soundtrack',
     albumId: '14',
-    duration: 229,
+    duration: 228, // Fixed: Real duration is 3:48
     image: '/see-you-again.avif',
     genre: 'Hip Hop',
     releaseDate: '2015-03-10',
@@ -136,7 +136,7 @@ export const sampleTracks: Track[] = [
     artistId: '6',
     album: '÷ (Divide)',
     albumId: '8',
-    duration: 233,
+    duration: 234, // Fixed: Real duration is 3:54
     image: '/Shape%20Of%20You.avif',
     genre: 'Pop',
     releaseDate: '2017-01-06',
@@ -166,7 +166,7 @@ export const sampleTracks: Track[] = [
     artistId: '10',
     album: 'Uptown Special',
     albumId: '12',
-    duration: 270,
+    duration: 269, // Fixed: Real duration is 4:29
     image: '/Uptown%20Funk.jpeg',
     genre: 'Funk',
     releaseDate: '2014-11-10',
@@ -181,7 +181,7 @@ export const sampleTracks: Track[] = [
     artistId: '7',
     album: 'Psy 6 (Six Rules), Part 1',
     albumId: '9',
-    duration: 219,
+    duration: 218, // Fixed: Real duration is 3:38
     image: '/Gangnam%20Style.avif',
     genre: 'K-Pop',
     releaseDate: '2012-07-15',

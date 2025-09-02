@@ -22,7 +22,10 @@ class ImageService {
     width?: number;
     height?: number;
   } = {}): string {
-    if (!originalUrl) return originalUrl;
+    if (!originalUrl) {
+      console.warn('ImageService: Empty URL provided for optimization');
+      return originalUrl;
+    }
 
     const {
       quality = 85,
@@ -39,23 +42,33 @@ class ImageService {
 
     let optimizedUrl = originalUrl;
 
-    // Optimize Supabase images
+    // Only optimize Supabase images, leave other URLs as-is
     if (originalUrl.includes('supabase.co')) {
-      const url = new URL(originalUrl);
-      const params = new URLSearchParams();
-      
-      // Add optimization parameters
-      params.set('quality', quality.toString());
-      params.set('format', format);
-      
-      if (width) params.set('width', width.toString());
-      if (height) params.set('height', height.toString());
-      
-      // Add caching headers
-      params.set('cache', '3600'); // 1 hour cache
-      
-      url.search = params.toString();
-      optimizedUrl = url.toString();
+      try {
+        const url = new URL(originalUrl);
+        const params = new URLSearchParams();
+        
+        // Add optimization parameters
+        params.set('quality', quality.toString());
+        params.set('format', format);
+        
+        if (width) params.set('width', width.toString());
+        if (height) params.set('height', height.toString());
+        
+        // Add caching headers
+        params.set('cache', '3600'); // 1 hour cache
+        
+        url.search = params.toString();
+        optimizedUrl = url.toString();
+        
+        console.log('ImageService: Optimized Supabase URL:', originalUrl, '->', optimizedUrl);
+      } catch (error) {
+        console.error('ImageService: Error optimizing Supabase URL:', error);
+        // Fall back to original URL if optimization fails
+        optimizedUrl = originalUrl;
+      }
+    } else {
+      console.log('ImageService: Non-Supabase URL, using as-is:', originalUrl);
     }
 
     // Cache the result
@@ -68,6 +81,12 @@ class ImageService {
    */
   preloadImage(url: string, priority: boolean = false): Promise<void> {
     return new Promise((resolve, reject) => {
+      if (!url) {
+        console.warn('ImageService: Empty URL provided for preload');
+        resolve();
+        return;
+      }
+
       if (this.preloadCache.has(url)) {
         resolve();
         return;
@@ -76,11 +95,13 @@ class ImageService {
       const img = new Image();
       
       img.onload = () => {
+        console.log('ImageService: Successfully preloaded image:', url);
         this.preloadCache.add(url);
         resolve();
       };
       
-      img.onerror = () => {
+      img.onerror = (error) => {
+        console.error('ImageService: Failed to preload image:', url, error);
         reject(new Error(`Failed to preload image: ${url}`));
       };
 

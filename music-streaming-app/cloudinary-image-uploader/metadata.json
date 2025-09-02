@@ -1,0 +1,5 @@
+{
+  "name": "Cloudinary Image Uploader",
+  "description": "A simple and elegant web application to upload images directly to a Cloudinary account. It features a drag-and-drop interface, real-time upload status, and an image preview upon successful upload.",
+  "requestFramePermissions": []
+}

@@ -1,18 +1,25 @@
 import { motion } from 'framer-motion';
-import { Settings, Play, ArrowLeft, Check, X } from 'lucide-react';
+import { Settings, Play, ArrowLeft, Check, X, RefreshCw } from 'lucide-react';
 import { sampleTracks } from '../data';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMusicPlayer } from '../App';
 import { useUser } from '../contexts/UserContext';
+import MusicDataService from '../lib/musicDataService';
+import OptimizedImage from '../components/OptimizedImage';
+import type { Track } from '../types';
 
 const AllSongs = () => {
   const [greeting, setGreeting] = useState('Good evening');
   const [selectedSongs, setSelectedSongs] = useState<string[]>([]);
   const [successMessage, setSuccessMessage] = useState('');
+  const [tracks, setTracks] = useState<Track[]>(sampleTracks);
+  const [isLoading, setIsLoading] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const navigate = useNavigate();
   const { playTrack } = useMusicPlayer();
   const { toggleLikedSong, isAuthenticated } = useUser();
+  const musicDataService = MusicDataService.getInstance();
 
   // Function to get appropriate greeting based on time
   const getGreeting = (hour: number) => {
@@ -66,6 +73,42 @@ const AllSongs = () => {
     }
   };
 
+  // Load tracks from the unified music data service
+  const loadTracks = async (forceRefresh = false) => {
+    setIsLoading(true);
+    try {
+      const allTracks = await musicDataService.getAllTracks(forceRefresh);
+      setTracks(allTracks);
+      setLastRefresh(new Date());
+    } catch (error) {
+      console.error('Error loading tracks:', error);
+      // Fallback to sample tracks
+      setTracks(sampleTracks);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Subscribe to track updates
+  useEffect(() => {
+    const unsubscribe = musicDataService.subscribe((updatedTracks) => {
+      setTracks(updatedTracks);
+      setLastRefresh(new Date());
+    });
+
+    // Initial load
+    loadTracks();
+
+    return unsubscribe;
+  }, []);
+
+  // Handle manual refresh
+  const handleRefresh = async () => {
+    await loadTracks(true);
+    setSuccessMessage('Songs updated successfully!');
+    setTimeout(() => setSuccessMessage(''), 3000);
+  };
+
   useEffect(() => {
     getUserLocation();
     
@@ -108,8 +151,12 @@ const AllSongs = () => {
   };
 
   // Handle song play (clicking green button)
-  const handleSongPlay = (track: any, e: React.MouseEvent) => {
+  const handleSongPlay = async (track: Track, e: React.MouseEvent) => {
     e.stopPropagation();
+    
+    // Increment play count
+    await musicDataService.incrementPlayCount(track.id);
+    
     // Convert track to the format expected by playTrack
     const playableTrack = {
       id: track.id,
@@ -154,15 +201,33 @@ const AllSongs = () => {
             <ArrowLeft className="text-white" size={24} />
           </motion.button>
           <div>
-            <h1 className="text-2xl font-bold text-white mb-1">{greeting}</h1>
+            <div className="flex items-center gap-4">
+              <h1 className="text-2xl font-bold text-white mb-1">{greeting}</h1>
+              {lastRefresh && (
+                <span className="text-xs text-gray-400">
+                  Updated: {lastRefresh.toLocaleTimeString()}
+                </span>
+              )}
+            </div>
           </div>
         </div>
-        <motion.button 
-          className="p-2 hover:bg-spotify-gray rounded-full transition-colors"
-          whileTap={{ scale: 0.95 }}
-        >
-          <Settings className="text-white" size={24} />
-        </motion.button>
+        <div className="flex items-center gap-2">
+          <motion.button
+            onClick={handleRefresh}
+            disabled={isLoading}
+            className="p-2 hover:bg-spotify-gray rounded-full transition-colors disabled:opacity-50"
+            whileTap={{ scale: 0.95 }}
+            title="Refresh songs"
+          >
+            <RefreshCw className={`text-white ${isLoading ? 'animate-spin' : ''}`} size={20} />
+          </motion.button>
+          <motion.button 
+            className="p-2 hover:bg-spotify-gray rounded-full transition-colors"
+            whileTap={{ scale: 0.95 }}
+          >
+            <Settings className="text-white" size={24} />
+          </motion.button>
+        </div>
       </motion.div>
 
       {/* Category Pills */}
@@ -260,54 +325,73 @@ const AllSongs = () => {
         variants={itemVariants}
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-          {sampleTracks.map((track) => {
-            const isSelected = selectedSongs.includes(track.id);
-            
-            return (
-            <motion.div
-              key={track.id}
-              className={`flex items-center rounded-md overflow-hidden card-hover cursor-pointer transition-all duration-200 group ${
-                isSelected 
-                  ? 'bg-spotify-green/20 border-2 border-spotify-green shadow-lg scale-[1.02]' 
-                  : 'bg-spotify-gray border-2 border-transparent hover:bg-spotify-light-gray/10'
-              }`}
-              whileTap={{ scale: 0.98 }}
-              whileHover={{ scale: isSelected ? 1.02 : 1.01 }}
-              transition={{ duration: 0.2 }}
-              onClick={() => handleSongSelect(track.id)}
-            >
-              <div className="w-14 h-14 flex-shrink-0 bg-gradient-to-br from-spotify-light-gray to-spotify-gray rounded-md overflow-hidden border border-spotify-gray shadow-sm flex items-center justify-center relative">
-                {isSelected && (
-                  <div className="absolute top-1 right-1 w-4 h-4 bg-spotify-green rounded-full flex items-center justify-center z-10">
-                    <Check className="text-black" size={10} />
-                  </div>
-                )}
-                <img 
-                  src={track.image} 
-                  alt={track.title}
-                  className="w-full h-full object-cover"
-                />
+          {isLoading ? (
+            // Loading skeleton
+            Array.from({ length: 10 }).map((_, index) => (
+              <div key={`skeleton-${index}`} className="flex items-center rounded-md overflow-hidden bg-spotify-gray/20 animate-pulse">
+                <div className="w-14 h-14 bg-spotify-gray/40 flex-shrink-0"></div>
+                <div className="flex-1 min-w-0 px-3 py-2">
+                  <div className="h-4 bg-spotify-gray/40 rounded mb-1"></div>
+                  <div className="h-3 bg-spotify-gray/40 rounded w-2/3"></div>
+                </div>
               </div>
-              <div className="flex-1 min-w-0 px-3 py-2">
-                <h3 className="text-white font-medium text-sm truncate">{track.title}</h3>
-                <p className="text-spotify-light-gray text-xs truncate mt-1">{track.artist}</p>
-              </div>
-              <div className="flex-shrink-0 p-1 sm:p-1.5 md:p-2">
+            ))
+          ) : (
+            tracks.map((track) => {
+              const isSelected = selectedSongs.includes(track.id);
+              
+              return (
                 <motion.div
-                  className="w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 bg-spotify-green rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                  whileHover={{ scale: 1.1 }}
-                  style={{ opacity: 1 }}
-                  onClick={(e) => handleSongPlay(track, e)}
+                  key={track.id}
+                  className={`flex items-center rounded-md overflow-hidden card-hover cursor-pointer transition-all duration-200 group ${
+                    isSelected 
+                      ? 'bg-spotify-green/20 border-2 border-spotify-green shadow-lg scale-[1.02]' 
+                      : 'bg-spotify-gray border-2 border-transparent hover:bg-spotify-light-gray/10'
+                  }`}
+                  whileTap={{ scale: 0.98 }}
+                  whileHover={{ scale: isSelected ? 1.02 : 1.01 }}
+                  transition={{ duration: 0.2 }}
+                  onClick={() => handleSongSelect(track.id)}
                 >
-                  <Play className="text-black ml-0.5" size={12} fill="currentColor" />
+                  <div className="w-14 h-14 flex-shrink-0 bg-gradient-to-br from-spotify-light-gray to-spotify-gray rounded-md overflow-hidden border border-spotify-gray shadow-sm flex items-center justify-center relative">
+                    {isSelected && (
+                      <div className="absolute top-1 right-1 w-4 h-4 bg-spotify-green rounded-full flex items-center justify-center z-10">
+                        <Check className="text-black" size={10} />
+                      </div>
+                    )}
+                    <OptimizedImage 
+                      src={track.image} 
+                      alt={track.title}
+                      className="w-full h-full object-cover"
+                      priority={false}
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0 px-3 py-2">
+                    <h3 className="text-white font-medium text-sm truncate">{track.title}</h3>
+                    <p className="text-spotify-light-gray text-xs truncate mt-1">{track.artist}</p>
+                    {track.plays && track.plays > 0 && (
+                      <div className="text-xs text-gray-500 mt-0.5">
+                        {track.plays.toLocaleString()} plays
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex-shrink-0 p-1 sm:p-1.5 md:p-2">
+                    <motion.div
+                      className="w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 bg-spotify-green rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                      whileHover={{ scale: 1.1 }}
+                      style={{ opacity: 1 }}
+                      onClick={(e) => handleSongPlay(track, e)}
+                    >
+                      <Play className="text-black ml-0.5" size={12} fill="currentColor" />
+                    </motion.div>
+                  </div>
                 </motion.div>
-              </div>
-            </motion.div>
-          );
-        })}
+              );
+            })
+          )}
         </div>
       </motion.div>
-    </motion.div> // This was the missing closing tag
+    </motion.div>
   );
 };
 

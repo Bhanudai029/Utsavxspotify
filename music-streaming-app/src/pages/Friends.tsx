@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useLayoutEffect, memo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Users, UserPlus, UserMinus, Loader2, Heart, UserCheck, Eye, RefreshCw } from 'lucide-react';
+import { Search, Users, UserPlus, UserMinus, Loader2, Heart, UserCheck, RefreshCw } from 'lucide-react';
 import { useUser } from '../contexts/UserContext';
 import { getUserTag } from '../lib/firebaseService';
+import { cacheService } from '../lib/cacheService';
 import type { UserProfile } from '../lib/firebaseService';
 
 const Friends = () => {
@@ -32,22 +33,54 @@ const Friends = () => {
   const [lastUpdateTime, setLastUpdateTime] = useState<Date | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
+  const [hoveredCardId, setHoveredCardId] = useState<string | null>(null);
+  
+  // Refs to prevent re-renders during hover - Anti-flickering solution
+  const cardRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
+  const renderingFrozen = useRef<{ [key: string]: boolean }>({});
 
   const currentUserId = useMemo(() => currentUser?.id, [currentUser?.id]);
 
-  useEffect(() => {
+  // Use layoutEffect to prevent flickering during DOM updates
+  useLayoutEffect(() => {
     const initTimer = setTimeout(() => {
       setIsInitializing(false);
-    }, 500);
+    }, 300); // Reduced from 500ms for faster response
     
     return () => clearTimeout(initTimer);
   }, []);
 
+  // Memoized data loading functions with cache integration
   const loadFollowingStatusForUsers = useCallback(async (users: UserProfile[]) => {
-    if (!currentUserId) return;
+    if (!currentUserId || users.length === 0) return;
     
-    const statusPromises = users.map(user => 
-      checkIsFollowing(user.id).then(isFollowing => ({ userId: user.id, isFollowing }))
+    // First, load from cache and set immediately to prevent flickering
+    const cacheStatusMap: { [key: string]: boolean } = {};
+    const usersToFetch: UserProfile[] = [];
+    
+    users.forEach(user => {
+      const cachedStatus = cacheService.getCachedFollowingStatus(user.id);
+      if (cachedStatus !== null) {
+        cacheStatusMap[user.id] = cachedStatus;
+      } else {
+        usersToFetch.push(user);
+      }
+    });
+    
+    // Immediately set cached data to prevent flickering
+    if (Object.keys(cacheStatusMap).length > 0) {
+      setFollowingStatus(prev => ({ ...prev, ...cacheStatusMap }));
+    }
+    
+    // Only fetch data for users not in cache
+    if (usersToFetch.length === 0) return;
+    
+    const statusPromises = usersToFetch.map(user => 
+      checkIsFollowing(user.id).then(isFollowing => {
+        // Cache the result
+        cacheService.setCachedFollowingStatus(user.id, isFollowing);
+        return { userId: user.id, isFollowing };
+      })
     );
     
     const statuses = await Promise.all(statusPromises);
@@ -60,8 +93,35 @@ const Friends = () => {
   }, [currentUserId, checkIsFollowing]);
 
   const loadUserStatsForUsers = useCallback(async (users: UserProfile[]) => {
-    const statsPromises = users.map(user => 
-      getUserStats(user.id).then(stats => ({ userId: user.id, stats }))
+    if (users.length === 0) return;
+    
+    // First, load from cache and set immediately to prevent flickering
+    const cacheStatsMap: { [key: string]: { followers: number; following: number } } = {};
+    const usersToFetch: UserProfile[] = [];
+    
+    users.forEach(user => {
+      const cachedStats = cacheService.getCachedUserStats(user.id);
+      if (cachedStats) {
+        cacheStatsMap[user.id] = { followers: cachedStats.followersCount, following: cachedStats.followingCount };
+      } else {
+        usersToFetch.push(user);
+      }
+    });
+    
+    // Immediately set cached data to prevent flickering
+    if (Object.keys(cacheStatsMap).length > 0) {
+      setUserStats(prev => ({ ...prev, ...cacheStatsMap }));
+    }
+    
+    // Only fetch data for users not in cache
+    if (usersToFetch.length === 0) return;
+    
+    const statsPromises = usersToFetch.map(user => 
+      getUserStats(user.id).then(stats => {
+        // Cache the result
+        cacheService.setCachedUserStats(user.id, { followersCount: stats.followersCount, followingCount: stats.followingCount });
+        return { userId: user.id, stats };
+      })
     );
     
     const allStats = await Promise.all(statsPromises);
@@ -73,6 +133,7 @@ const Friends = () => {
     setUserStats(prev => ({ ...prev, ...statsMap }));
   }, [getUserStats]);
 
+  // Optimized suggested users loading with cache integration
   const loadSuggestedUsers = useCallback(async (forceRefresh = false) => {
     const now = Date.now();
     if (!forceRefresh && now - lastLoadTime < 30000) {
@@ -82,9 +143,52 @@ const Friends = () => {
 
     try {
       setIsLoadingSuggestions(true);
+      
+      // First, try to load from cache to prevent flickering
+      if (!forceRefresh) {
+        const cachedSuggestions = cacheService.getCachedSuggestedUsers();
+        if (cachedSuggestions && cachedSuggestions.length > 0) {
+          console.log('Loading suggested users from cache');
+          setSuggestedUsers(cachedSuggestions);
+          
+          // Load cached data for these users
+          await Promise.all([
+            loadFollowingStatusForUsers(cachedSuggestions),
+            loadUserStatsForUsers(cachedSuggestions)
+          ]);
+          
+          setIsLoadingSuggestions(false);
+          
+          // Fetch fresh data in background
+          setTimeout(async () => {
+            try {
+              const freshSuggestions = await getSuggestedUsers(12);
+              cacheService.setCachedSuggestedUsers(freshSuggestions);
+              setSuggestedUsers(freshSuggestions);
+              
+              await Promise.all([
+                loadFollowingStatusForUsers(freshSuggestions),
+                loadUserStatsForUsers(freshSuggestions)
+              ]);
+            } catch (error) {
+              console.error('Background refresh failed:', error);
+            }
+          }, 1000);
+          
+          return;
+        }
+      }
+      
       setLastLoadTime(now);
       const suggestions = await getSuggestedUsers(12);
-      setSuggestedUsers(suggestions);
+      
+      // Cache the results
+      cacheService.setCachedSuggestedUsers(suggestions);
+      
+      // Use layoutEffect pattern to prevent flickering
+      requestAnimationFrame(() => {
+        setSuggestedUsers(suggestions);
+      });
       
       await Promise.all([
         loadFollowingStatusForUsers(suggestions),
@@ -98,13 +202,24 @@ const Friends = () => {
     } finally {
       setIsLoadingSuggestions(false);
     }
-  }, [getSuggestedUsers, loadFollowingStatusForUsers, loadUserStatsForUsers]);
+  }, [getSuggestedUsers, loadFollowingStatusForUsers, loadUserStatsForUsers, lastLoadTime]);
 
   useEffect(() => {
     if (isAuthenticated && currentUserId) {
       loadSuggestedUsers(true);
     }
   }, [isAuthenticated, currentUserId]);
+
+  // Cleanup expired cache on mount and unmount
+  useEffect(() => {
+    // Clear expired cache on mount
+    cacheService.clearExpiredCache();
+    
+    return () => {
+      // Clear expired cache on unmount
+      cacheService.clearExpiredCache();
+    };
+  }, []);
 
   useEffect(() => {
     if (!isAuthenticated || !currentUserId) return;
@@ -143,6 +258,7 @@ const Friends = () => {
     }
   }, [isRefreshing, loadSuggestedUsers]);
 
+  // Optimized search with cache integration
   const handleSearch = useCallback(async (query: string) => {
     setSearchQuery(query);
     
@@ -153,8 +269,32 @@ const Friends = () => {
     
     try {
       setIsSearching(true);
+      
+      // Try to load from cache first
+      const cachedResults = cacheService.getCachedSearchResults(query.trim());
+      if (cachedResults) {
+        console.log('Loading search results from cache');
+        setSearchResults(cachedResults);
+        
+        // Load cached data for these users
+        await Promise.all([
+          loadFollowingStatusForUsers(cachedResults),
+          loadUserStatsForUsers(cachedResults)
+        ]);
+        
+        setIsSearching(false);
+        return;
+      }
+      
       const results = await searchUsers(query.trim());
-      setSearchResults(results);
+      
+      // Cache the results
+      cacheService.setCachedSearchResults(query.trim(), results);
+      
+      // Use layoutEffect pattern for smooth updates
+      requestAnimationFrame(() => {
+        setSearchResults(results);
+      });
       
       await Promise.all([
         loadFollowingStatusForUsers(results),
@@ -168,6 +308,7 @@ const Friends = () => {
     }
   }, [searchUsers, loadFollowingStatusForUsers, loadUserStatsForUsers]);
 
+  // Optimized follow toggle with cache updates
   const handleToggleFollow = useCallback(async (userId: string) => {
     if (!currentUserId) return;
     
@@ -184,13 +325,45 @@ const Friends = () => {
       }
       
       if (success) {
-        setFollowingStatus(prev => ({ ...prev, [userId]: !isCurrentlyFollowing }));
+        const newFollowingStatus = !isCurrentlyFollowing;
         
-        const newStats = await getUserStats(userId);
-        setUserStats(prev => ({ 
-          ...prev, 
-          [userId]: { followers: newStats.followersCount, following: newStats.followingCount }
-        }));
+        // Update following status immediately for better UX
+        setFollowingStatus(prev => ({ ...prev, [userId]: newFollowingStatus }));
+        
+        // Update cache immediately
+        cacheService.setCachedFollowingStatus(userId, newFollowingStatus);
+        
+        // Update stats optimistically
+        setUserStats(prev => {
+          const currentStats = prev[userId] || { followers: 0, following: 0 };
+          const newStats = {
+            ...currentStats,
+            followers: currentStats.followers + (isCurrentlyFollowing ? -1 : 1)
+          };
+          
+          // Update cache with new stats
+          cacheService.setCachedUserStats(userId, { 
+            followersCount: newStats.followers, 
+            followingCount: newStats.following 
+          });
+          
+          return { ...prev, [userId]: newStats };
+        });
+        
+        // Fetch actual stats in background without blocking UI
+        setTimeout(async () => {
+          try {
+            const newStats = await getUserStats(userId);
+            const updatedStats = { followers: newStats.followersCount, following: newStats.followingCount };
+            
+            setUserStats(prev => ({ ...prev, [userId]: updatedStats }));
+            
+            // Update cache with fresh stats
+            cacheService.setCachedUserStats(userId, newStats);
+          } catch (error) {
+            console.warn('Failed to refresh stats:', error);
+          }
+        }, 1000);
       }
     } catch (error) {
       console.error('Error toggling follow status:', error);
@@ -199,37 +372,27 @@ const Friends = () => {
     }
   }, [currentUserId, followingStatus, followUser, unfollowUser, getUserStats]);
 
-  const getProfileImageUrl = (user: UserProfile) => {
-    if (user.profileImage && !user.profileImage.startsWith('data:image/svg+xml')) {
-      console.log(`Using custom profile image for ${user.displayName}:`, user.profileImage);
-      return user.profileImage;
+  // Anti-flickering: Completely freeze rendering during hover to prevent flickering
+  const freezeRendering = useCallback((userId: string) => {
+    renderingFrozen.current[userId] = true;
+    const cardRef = cardRefs.current[userId];
+    if (cardRef) {
+      // Apply hardware acceleration and containment
+      cardRef.style.transform = 'translate3d(0, 0, 0)';
+      cardRef.style.willChange = 'transform, opacity';
+      cardRef.style.contain = 'layout style paint';
     }
-    console.log(`Using placeholder for ${user.displayName}`);
-    return '/PPplaceholder-modified.png';
-  };
+  }, []);
 
-  const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
-    const img = e.currentTarget;
-    img.style.opacity = '1';
-    console.log('Image loaded successfully:', img.src);
-  };
-
-  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
-    const img = e.currentTarget;
-    console.warn('Failed to load profile image:', img.src);
-    if (!img.src.includes('PPplaceholder-modified.png')) {
-      img.src = '/PPplaceholder-modified.png';
+  const unfreezeRendering = useCallback((userId: string) => {
+    renderingFrozen.current[userId] = false;
+    const cardRef = cardRefs.current[userId];
+    if (cardRef) {
+      cardRef.style.willChange = 'auto';
     }
-  };
+  }, []);
 
-  const formatCount = (count: number) => {
-    if (count >= 1000000) {
-      return `${(count / 1000000).toFixed(1)}M`;
-    } else if (count >= 1000) {
-      return `${(count / 1000).toFixed(1)}K`;
-    }
-    return count.toString();
-  };
+
 
   const formatLastUpdateTime = (date: Date | null) => {
     if (!date) return 'Never';
@@ -247,22 +410,67 @@ const Friends = () => {
     return date.toLocaleDateString();
   };
 
-  // FIXED UserCard component - prevents hover flickering
-  const UserCard = ({ user, showFollowButton = true }: { user: UserProfile; showFollowButton?: boolean }) => {
+  // Ultra-optimized UserCard with frozen rendering during hover - ANTI-FLICKERING SOLUTION
+  const OptimizedUserCard = memo(({ user }: { user: UserProfile }) => {
     const isFollowing = followingStatus[user.id] || false;
     const stats = userStats[user.id] || { followers: 0, following: 0 };
     const isLoading = actionLoading[user.id] || false;
-    const [isHovered, setIsHovered] = useState(false);
+    const isCardHovered = hoveredCardId === user.id;
+
+    // Memoized static data that never changes during hover
+    const cardStaticData = useMemo(() => ({
+      profileImageUrl: user.profileImage || '/PPplaceholder-modified.png',
+      userTag: getUserTag(user),
+      displayName: user.displayName,
+      userId: user.id,
+      formattedFollowers: stats.followers >= 1000000 
+        ? `${(stats.followers / 1000000).toFixed(1)}M`
+        : stats.followers >= 1000 
+        ? `${(stats.followers / 1000).toFixed(1)}K` 
+        : stats.followers.toString(),
+      formattedFollowing: stats.following >= 1000 
+        ? `${(stats.following / 1000).toFixed(1)}K` 
+        : stats.following.toString(),
+      bio: user.bio || ''
+    }), [user, stats.followers, stats.following]);
+
+    // Optimized hover handlers with rendering freeze - isolated per card
+    const handleMouseEnter = useCallback(() => {
+      setHoveredCardId(user.id);
+      freezeRendering(user.id);
+    }, [user.id, freezeRendering]);
+
+    const handleMouseLeave = useCallback(() => {
+      setHoveredCardId(null);
+      // Delay unfreeze slightly to ensure smooth animation completion
+      setTimeout(() => unfreezeRendering(user.id), 150);
+    }, [user.id, unfreezeRendering]);
+
+    // Prevent image re-rendering on error
+    const handleImageError = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
+      const img = e.currentTarget;
+      if (!img.src.includes('PPplaceholder-modified.png')) {
+        img.src = '/PPplaceholder-modified.png';
+      }
+    }, []);
+
+    const handleFollowClick = useCallback((e: React.MouseEvent) => {
+      if (renderingFrozen.current[user.id]) return;
+      e.stopPropagation();
+      handleToggleFollow(user.id);
+    }, [user.id]);
 
     return (
       <div 
-        className="user-card-container bg-spotify-gray/80 rounded-lg p-4 backdrop-blur-sm border border-transparent cursor-pointer overflow-hidden"
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
+        ref={(el) => {
+          cardRefs.current[user.id] = el;
+        }}
+        className="bg-spotify-gray/80 rounded-lg p-4 backdrop-blur-sm border cursor-pointer transition-colors duration-200 overflow-hidden"
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
         style={{
-          backgroundColor: isHovered ? 'rgba(40, 40, 40, 1)' : 'rgba(40, 40, 40, 0.8)',
-          borderColor: isHovered ? 'rgba(30, 215, 96, 0.2)' : 'transparent',
-          transition: 'all 0.2s ease-out'
+          backgroundColor: isCardHovered ? 'rgba(40, 40, 40, 0.9)' : 'rgba(40, 40, 40, 0.8)',
+          borderColor: isCardHovered ? '#1DB954' : 'rgb(75, 85, 99)'
         }}
       >
         <div className="flex items-center space-x-4">
@@ -270,13 +478,14 @@ const Friends = () => {
           <div className="relative flex-shrink-0">
             <div className="w-16 h-16 rounded-full overflow-hidden bg-gray-700/50">
               <img
-                src={getProfileImageUrl(user)}
-                alt={user.displayName}
+                src={cardStaticData.profileImageUrl}
+                alt={cardStaticData.displayName}
                 className="w-full h-full object-cover"
-                onLoad={handleImageLoad}
                 onError={handleImageError}
                 loading="eager"
-                decoding="async"
+                style={{
+                  backgroundColor: 'transparent'
+                }}
               />
             </div>
             {isFollowing && (
@@ -286,91 +495,67 @@ const Friends = () => {
             )}
           </div>
           
-          {/* User Info - Using inline styles to prevent flickering */}
+          {/* User Info */}
           <div className="flex-1 min-w-0">
             <h3 
-              className="font-semibold text-lg truncate"
-              style={{
-                color: isHovered ? '#1ed760' : '#ffffff',
-                transition: 'color 0.2s ease-out'
-              }}
+              className="font-semibold text-lg truncate transition-colors duration-200"
+              style={{ color: isCardHovered ? '#1DB954' : 'white' }}
             >
-              {user.displayName}
+              {cardStaticData.displayName}
             </h3>
             <p 
-              className="text-sm truncate"
-              style={{
-                color: isHovered ? 'rgba(255, 255, 255, 0.9)' : '#b3b3b3',
-                transition: 'color 0.2s ease-out'
-              }}
+              className="text-sm truncate transition-colors duration-200"
+              style={{ color: isCardHovered ? 'rgba(255, 255, 255, 0.9)' : '#b3b3b3' }}
             >
-              @{getUserTag(user)}
+              @{cardStaticData.userTag}
             </p>
             
-            {/* Stats - Fixed colors to prevent flickering */}
+            {/* Stats */}
             <div className="flex items-center space-x-4 mt-2">
               <div className="flex items-center space-x-1">
                 <Heart 
-                  className="w-4 h-4"
-                  style={{
-                    color: isHovered ? '#ef4444' : '#f87171',
-                    transition: 'color 0.2s ease-out'
-                  }}
+                  className="w-4 h-4 transition-colors duration-200" 
+                  style={{ color: isCardHovered ? '#ef4444' : '#b3b3b3' }}
                 />
                 <span 
-                  className="text-sm"
-                  style={{
-                    color: isHovered ? '#ffffff' : '#b3b3b3',
-                    transition: 'color 0.2s ease-out'
-                  }}
+                  className="text-sm transition-colors duration-200"
+                  style={{ color: isCardHovered ? 'white' : '#b3b3b3' }}
                 >
-                  {formatCount(stats.followers)} followers
+                  {cardStaticData.formattedFollowers} followers
                 </span>
               </div>
               <div className="flex items-center space-x-1">
-                <Eye 
-                  className="w-4 h-4"
-                  style={{
-                    color: isHovered ? '#3b82f6' : '#60a5fa',
-                    transition: 'color 0.2s ease-out'
-                  }}
+                <Users 
+                  className="w-4 h-4 transition-colors duration-200" 
+                  style={{ color: isCardHovered ? '#3b82f6' : '#b3b3b3' }}
                 />
                 <span 
-                  className="text-sm"
-                  style={{
-                    color: isHovered ? '#ffffff' : '#b3b3b3',
-                    transition: 'color 0.2s ease-out'
-                  }}
+                  className="text-sm transition-colors duration-200"
+                  style={{ color: isCardHovered ? 'white' : '#b3b3b3' }}
                 >
-                  {formatCount(stats.following)} following
+                  {cardStaticData.formattedFollowing} following
                 </span>
               </div>
             </div>
             
             {/* Bio */}
-            {user.bio && (
+            {cardStaticData.bio && (
               <p 
-                className="text-xs mt-1 truncate"
-                style={{
-                  color: isHovered ? 'rgba(255, 255, 255, 0.8)' : '#b3b3b3',
-                  transition: 'color 0.2s ease-out'
-                }}
+                className="text-xs mt-1 truncate transition-colors duration-200"
+                style={{ color: isCardHovered ? 'rgba(255, 255, 255, 0.8)' : '#b3b3b3' }}
               >
-                {user.bio}
+                {cardStaticData.bio}
               </p>
             )}
           </div>
           
           {/* Follow Button */}
-          {showFollowButton && currentUser?.id !== user.id && (
-            <div className="flex-shrink-0">
+          <div className="flex-shrink-0">
+            {currentUser?.id !== cardStaticData.userId && (
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleToggleFollow(user.id);
-                }}
+                onClick={handleFollowClick}
                 disabled={isLoading}
-                className={`px-4 py-2 rounded-full font-semibold text-sm min-w-[90px] border-2 transition-all duration-200 ease-out ${
+                className={`px-4 py-2 rounded-full font-semibold text-sm min-w-[90px] border-2 transition-colors duration-200 ${
                   isFollowing
                     ? 'bg-transparent border-spotify-green text-spotify-green hover:bg-spotify-green hover:text-black'
                     : 'bg-spotify-green border-spotify-green text-black hover:bg-spotify-green/90'
@@ -390,12 +575,19 @@ const Friends = () => {
                   </span>
                 )}
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     );
-  };
+  }, (prevProps, nextProps) => {
+    // Ultra-strict equality check to prevent ANY re-renders during hover
+    return (
+      prevProps.user.id === nextProps.user.id &&
+      prevProps.user.displayName === nextProps.user.displayName &&
+      prevProps.user.profileImage === nextProps.user.profileImage
+    );
+  });
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -641,7 +833,7 @@ const Friends = () => {
                       className="animate-fadeIn"
                       style={{ animationDelay: `${index * 50}ms` }}
                     >
-                      <UserCard user={user} />
+                      <OptimizedUserCard user={user} />
                     </div>
                   ))}
                 </>
@@ -682,7 +874,7 @@ const Friends = () => {
                       className="animate-fadeIn"
                       style={{ animationDelay: `${index * 100}ms` }}
                     >
-                      <UserCard user={user} />
+                      <OptimizedUserCard user={user} />
                     </div>
                   ))}
                 </div>

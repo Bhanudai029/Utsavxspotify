@@ -29,19 +29,25 @@ const OptimizedImage: React.FC<OptimizedImageProps> = ({
 
   // Preload image for better UX
   useEffect(() => {
-    if (!src) return;
+    if (!src) {
+      console.warn('OptimizedImage: No src provided');
+      return;
+    }
 
     const imageService = ImageService.getInstance();
     
-    // Only optimize external URLs (like Supabase), not local files
-    const shouldOptimize = src.includes('supabase.co') || src.startsWith('http');
+    // Only optimize Supabase URLs, leave Firebase and other URLs as-is
+    const shouldOptimize = src.includes('supabase.co');
     const optimizedSrc = shouldOptimize ? imageService.optimizeImageUrl(src, {
       quality: priority ? 90 : 85,
       format: 'webp'
     }) : src;
 
+    console.log('OptimizedImage: Processing image', { src, optimizedSrc, shouldOptimize, priority });
+
     // For priority images, set the source immediately without preloading
     if (priority) {
+      console.log('OptimizedImage: Priority image, setting immediately');
       setImageSrc(optimizedSrc);
       setImageLoaded(true);
       return;
@@ -51,20 +57,24 @@ const OptimizedImage: React.FC<OptimizedImageProps> = ({
     const img = new Image();
     
     img.onload = () => {
+      console.log('OptimizedImage: Image loaded successfully:', optimizedSrc);
       setImageSrc(optimizedSrc);
       setImageLoaded(true);
       onLoad?.();
     };
     
-    img.onerror = () => {
+    img.onerror = (error) => {
+      console.warn('OptimizedImage: Optimized image failed, trying original:', error);
       // Fallback to original URL if optimized fails
       const fallbackImg = new Image();
       fallbackImg.onload = () => {
+        console.log('OptimizedImage: Fallback image loaded successfully:', src);
         setImageSrc(src);
         setImageLoaded(true);
         onLoad?.();
       };
-      fallbackImg.onerror = () => {
+      fallbackImg.onerror = (fallbackError) => {
+        console.error('OptimizedImage: Both optimized and original image failed:', fallbackError);
         setImageError(true);
         setImageLoaded(true);
         onError?.();

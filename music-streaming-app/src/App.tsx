@@ -13,9 +13,10 @@ import Profile from './pages/Profile';
 import AllSongs from './pages/AllSongs';
 import LikedSongs from './pages/LikedSongs';
 import AdminDashboard from './pages/AdminDashboard';
+import SongManagementAdmin from './pages/SongManagementAdmin';
 import Followers from './pages/Followers';
 import Following from './pages/Following';
-import FriendsTest from './pages/FriendsTest';
+
 
 // Track interface
 interface Track {
@@ -702,7 +703,7 @@ const AuthenticatedApp = () => {
             <Route path="/followers/:userId" element={<Followers />} />
             <Route path="/following" element={<Following />} />
             <Route path="/following/:userId" element={<Following />} />
-            <Route path="/friends-test" element={<FriendsTest />} />
+
           </Routes>
         </motion.main>
         
@@ -717,6 +718,15 @@ const AuthenticatedApp = () => {
         <BottomNavigation />
       </div>
     </MusicContext.Provider>
+  );
+};
+
+// Song Management Admin wrapper
+const SongManagementWrapper = () => {
+  return (
+    <div className="h-screen bg-spotify-black">
+      <SongManagementAdmin />
+    </div>
   );
 };
 
@@ -735,8 +745,9 @@ function App() {
     <UserProvider>
       <Router>
         <Routes>
-          {/* Admin route - no user auth required */}
+          {/* Admin routes - no user auth required */}
           <Route path="/system/analytics/dashboard/secure/v2" element={<AdminDashboardWrapper />} />
+          <Route path="/system/content/management/secure/v3" element={<SongManagementWrapper />} />
           
           {/* All other routes require user authentication */}
           <Route path="/*" element={<AppContent />} />

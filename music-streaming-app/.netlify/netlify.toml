@@ -9,6 +9,7 @@ headers = []
 publish = "C:\\Users\\baral\\OneDrive\\Desktop\\Spotifyxutsav\\music-streaming-app\\dist"
 publishOrigin = "ui"
 commandOrigin = "ui"
+base = "C:\\Users\\baral\\OneDrive\\Desktop\\Spotifyxutsav\\music-streaming-app"
 command = "npm run build"
 
 [build.environment]

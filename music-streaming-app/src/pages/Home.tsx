@@ -323,35 +323,41 @@ const Home = () => {
               />
               <div className="flex-1 px-1.5 sm:px-2 md:px-3 min-w-0 overflow-hidden py-1">
                 <h3 className="text-white text-xs sm:text-sm md:text-sm font-medium leading-tight">
-                  {/* Smart line breaking for better text visibility */}
-                  {(() => {
-                    const name = track.title;
-                    if (name.length <= 10) {
-                      // Short names - single line
-                      return name;
-                    } else if (name.includes(' ') && name.length <= 20) {
-                      // Medium names with spaces - break at space
-                      const words = name.split(' ');
-                      const midPoint = Math.ceil(words.length / 2);
-                      const firstLine = words.slice(0, midPoint).join(' ');
-                      const secondLine = words.slice(midPoint).join(' ');
-                      return (
-                        <>
-                          <div>{firstLine}</div>
-                          <div>{secondLine}</div>
-                        </>
-                      );
-                    } else {
-                      // Long names or no spaces - break halfway
-                      const midPoint = Math.ceil(name.length / 2);
-                      return (
-                        <>
-                          <div>{name.substring(0, midPoint)}</div>
-                          <div>{name.substring(midPoint)}</div>
-                        </>
-                      );
-                    }
-                  })()}
+                  {/* Mobile: Smart line breaking for better text visibility */}
+                  <div className="md:hidden">
+                    {(() => {
+                      const name = track.title;
+                      if (name.length <= 10) {
+                        // Short names - single line
+                        return name;
+                      } else if (name.includes(' ') && name.length <= 20) {
+                        // Medium names with spaces - break at space
+                        const words = name.split(' ');
+                        const midPoint = Math.ceil(words.length / 2);
+                        const firstLine = words.slice(0, midPoint).join(' ');
+                        const secondLine = words.slice(midPoint).join(' ');
+                        return (
+                          <>
+                            <div>{firstLine}</div>
+                            <div>{secondLine}</div>
+                          </>
+                        );
+                      } else {
+                        // Long names or no spaces - break halfway
+                        const midPoint = Math.ceil(name.length / 2);
+                        return (
+                          <>
+                            <div>{name.substring(0, midPoint)}</div>
+                            <div>{name.substring(midPoint)}</div>
+                          </>
+                        );
+                      }
+                    })()}
+                  </div>
+                  {/* Desktop: Single line with truncation */}
+                  <div className="hidden md:block truncate">
+                    {track.title}
+                  </div>
                 </h3>
               </div>
               <div className="flex-shrink-0 p-1 sm:p-1.5 md:p-2">

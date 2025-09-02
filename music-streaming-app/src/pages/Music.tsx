@@ -4,12 +4,30 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUser } from '../contexts/UserContext';
 import { sampleTracks } from '../data';
+import OptimizedImage from '../components/OptimizedImage';
 
 const Music = () => {
   const navigate = useNavigate();
   const { currentUser, likedSongs, preloadUserStats } = useUser();
   const [activeTab, setActiveTab] = useState('Playlists');
   const tabs = ['Playlists', 'Podcasts', 'Albums', 'Artists'];
+  
+  // Get user's profile image URL with fallback
+  const getUserProfileImageUrl = () => {
+    if (currentUser?.profileImage && currentUser.profileImage !== '/PPplaceholder-modified.png') {
+      return currentUser.profileImage;
+    }
+    return '/PPplaceholder-modified.png';
+  };
+
+  // Custom placeholder for user profile picture
+  const ProfileImagePlaceholder = () => (
+    <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
+      <span className="text-white text-sm font-bold">
+        {currentUser?.displayName?.[0] || currentUser?.name?.[0] || 'U'}
+      </span>
+    </div>
+  );
   
   // Get liked tracks from the sample tracks based on user's liked song IDs
   const likedTracks = sampleTracks.filter(track => likedSongs.includes(track.id));
@@ -112,9 +130,22 @@ const Music = () => {
         className="flex items-center justify-between p-6 pb-4"
         variants={itemVariants}
       >
-        <div className="flex items-center">          <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mr-3">
-            <span className="text-white text-sm font-bold">{currentUser?.displayName?.[0] || currentUser?.name?.[0] || 'U'}</span>
-          </div>
+        <div className="flex items-center">
+          {/* User Profile Picture */}
+          {currentUser ? (
+            <OptimizedImage
+              src={getUserProfileImageUrl()}
+              alt={currentUser.displayName || currentUser.name || 'User Profile'}
+              className="w-8 h-8 rounded-full object-cover mr-3 border border-spotify-light-gray"
+              priority={true}
+              placeholder={<ProfileImagePlaceholder />}
+              onError={() => {
+                console.warn('Failed to load user profile image in Music page');
+              }}
+            />
+          ) : (
+            <ProfileImagePlaceholder />
+          )}
           <h1 className="text-2xl font-bold text-white">Your Library</h1>
         </div>
         <div className="flex items-center gap-3">

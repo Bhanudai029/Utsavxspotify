@@ -185,14 +185,122 @@
     opacity: 0;
   }
   
-  /* Fix hover flickering for user cards */
-  .user-card-container {
-    transform: translateZ(0); /* Force hardware acceleration */
-    backface-visibility: hidden; /* Prevent flickering */
-    will-change: background-color, border-color; /* Optimize transitions */
+  /* BUTTER-SMOOTH HOVER ANIMATIONS - Inspired by senior web developers */
+  .butter-smooth-card {
+    /* Hardware acceleration optimizations */
+    transform: translate3d(0, 0, 0);
+    backface-visibility: hidden;
+    will-change: transform, background-color, border-color;
+    /* Performance containment */
+    contain: layout style paint;
+    /* Smooth transitions with perfect timing (200ms as per UX guidelines) */
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    /* Prevent layout shifts */
+    isolation: isolate;
   }
   
-  .user-card-container .group-hover\:text-spotify-green {
-    transform: translateZ(0); /* Force hardware acceleration for text */
+  /* Hover state optimization */
+  .butter-smooth-card:hover {
+    /* Minimal transform for hardware acceleration */
+    transform: translate3d(0, -1px, 0);
+  }
+  
+  /* Smooth image transitions */
+  .smooth-image-container {
+    transform: translate3d(0, 0, 0);
+    backface-visibility: hidden;
+    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  /* Button smooth animations */
+  .smooth-button {
+    transform: translate3d(0, 0, 0);
+    backface-visibility: hidden;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    will-change: transform, box-shadow;
+  }
+  
+  .smooth-button:hover {
+    transform: translate3d(0, 0, 0) scale(1.02);
+  }
+  
+  /* Text glow effect for smooth hover feedback */
+  .text-glow-hover {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  .text-glow-hover:hover {
+    text-shadow: 0 0 8px currentColor;
+  }
+
+  .user-card-container {
+    animation: freeze-render 0.01s forwards;
+  }
+  
+  .user-card-container:hover * {
+    pointer-events: none; /* Disable all child interactions during hover */
+  }
+  
+  /* Re-enable pointer events only on interactive elements */
+  .user-card-container:hover button {
+    pointer-events: auto;
+    position: relative;
+    z-index: 10;
+  }
+  
+  @keyframes freeze-render {
+    0% { transform: translate3d(0, 0, 0); }
+    100% { transform: translate3d(0, 0, 0); }
+  }
+  
+  /* Pure CSS text color changes - NO JavaScript involvement */
+  .user-card-container .user-name {
+    color: white;
+    transform: translate3d(0, 0, 0);
+    backface-visibility: hidden;
+    contain: layout style paint;
+  }
+  
+  .user-card-container:hover .user-name {
+    color: #1db954 !important;
+  }
+  
+  .user-card-container .user-tag {
+    color: #b3b3b3;
+    transform: translate3d(0, 0, 0);
+    backface-visibility: hidden;
+    contain: layout style paint;
+  }
+  
+  .user-card-container:hover .user-tag {
+    color: rgba(255, 255, 255, 0.9) !important;
+  }
+  
+  /* Completely disable all transitions and animations on text */
+  .user-card-container h3,
+  .user-card-container p {
+    transition: none !important;
+    animation: none !important;
+    will-change: auto !important;
+  }
+  
+  /* Prevent layout shifts during image loading */
+  .user-card-container img {
+    transform: translateZ(0);
+    will-change: opacity;
+    transition: opacity 0.2s ease-in-out;
+    contain: layout style paint; /* Improve rendering performance */
+  }
+  
+  /* Smooth hover transitions without re-rendering */
+  .user-card-container:hover {
+    transform: translateZ(0); /* Maintain hardware acceleration without scale for stability */
+  }
+  
+  /* Optimize button hover states */
+  .user-card-container button {
+    transform: translateZ(0);
+    will-change: background-color, color, border-color;
+    contain: layout style;
   }
 }

@@ -1,0 +1,25 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Allow all users to read images - no authentication required
+    match /{allPaths=**} {
+      allow read: if true;
+    }
+    
+    // Test uploads - completely public for testing
+    match /test-uploads/{imageId} {
+      allow read, write, create, delete: if true;
+    }
+    
+    // Song images - public upload (matches your working setup)
+    match /song-images/{imageId} {
+      allow read, write, create, delete: if true;
+    }
+    
+    // Profile images - public for now
+    match /profile-images/{imageId} {
+      allow read, write, create, delete: if true;
+    }
+  }
+}
