@@ -6,6 +6,7 @@ import SongManagementService from '../lib/songManagementService';
 import ImageResizer from '../components/ImageResizer';
 import OptimizedImage from '../components/OptimizedImage';
 import { uploadImage as uploadToCloudinary } from '../../cloudinary-image-uploader/services/cloudinaryService';
+import { ensureAuth } from '../lib/firebase';
 import type { CloudinaryUploadResponse } from '../../cloudinary-image-uploader/types';
 import type { Track } from '../types';
 import type { SongUpload } from '../lib/songManagementService';
@@ -412,6 +413,12 @@ const SongManagementAdmin = () => {
     setError('');
 
     try {
+      // Ensure Firebase auth (anonymous) is established before any Firestore operation
+      try {
+        await ensureAuth();
+      } catch (e) {
+        console.warn('Proceeding without Firebase auth; Firestore write may be denied by rules.', e);
+      }
       if (editingSong) {
         // Update existing song - since we're not using the original service structure,
         // we'll need to update this manually or modify the service
